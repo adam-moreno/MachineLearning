@@ -1,0 +1,178 @@
+---
+title: "Wearables Workout Prediction - Machine Learning"
+author: "Adam Moreno"
+date: "February 14, 2019"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### R Markdown Document
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+
+#Data
+
+Training Data:
+  "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+Test Data:
+  "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+
+More information is available from the website here: 
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+#Goal
+
+The goal of this project is to predict the manner in which users did an exercise. This is the "Classe" variable in the training set. Use any of the other variables to predict with. Create a report describing the model build, the use of cross validation, the expected out of sample error, and why these choices were made. Use this prediction model to predict 20 different test cases.
+
+#Project Outline
+
+###Data Processing
+Working within this data, you'll quickly find blanks, NAs, and other values that represent missing/insufficient data.  Processing this data into a matching variable "NA", allows us to remove columns with any type of insufficient data effectively.  I chose to remove columns containing more than 15% NA values. 
+
+###Reproducibility
+Setting the seed at the beginning of analysis will create reproducible results, as well as downloading all libraries listed below and installing packages where needed on your own machine.  I have suppressed warnings and messages when referencing libraries to reduce clutter within the report.
+
+###Building the Model
+The model was built based on the Classe variable within our data.  The Classe variable describes five different fashions of how a health participant performed a Unilateral Dumbbell Bicep Curl:
+
+
+- Class A: exactly according to the specification
+- Class B: throwing the elbows to the front
+-	Class C: lifting the dumbbell only halfway
+-	Class D: lowering the dumbbell only halfway
+-	Class E: throwing the hips to the front
+
+All other variables, after excluding columns with excessive NA values, are used for our prediction model. Two models were built using decision tree and random forest algorithms. Whichever algorithm produces the more accurate results will be used as our final model against the out of sample dataset.
+
+###Cross-validation
+Creating data partitions within our training data, 70% training [myTraining] and 30% testing [myTesting], cross validates our original training dataset. Both models will be tested on the training dataset then the more accurate model will be run on the testing.  Finally, we will test predictions on the out of sample testing dataset containing 20 instances. 
+
+###Out of Sample Error
+To test our predictions, I am running a Confusion Matrix to determine accuracy within a 95% confidence interval across each Classe variable.
+I will be using accuracy to determine the validity of the model. The expected out of sample error correlates with any misclassification of the workout to our out of sample data set [og_testing].
+
+#Report
+Load in Data and Libraries
+```{r processing, include = TRUE}
+
+## Read in Data Files
+#Tons of NA, Blank, DIV/0 data, convert to NA at read in
+
+#Web URL download
+training_Url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+og_training <- read.csv(url(training_Url), na.strings=c("NA","#DIV/0!",""))
+test_Url <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+og_testing <- read.csv(url(test_Url), na.strings=c("NA","#DIV/0!",""))
+
+dim(og_training); dim(og_testing)
+
+#Load Libraries
+
+suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(dplyr)))
+suppressWarnings(suppressMessages(library(rpart)))
+#library(rpart.plot)
+suppressWarnings(suppressMessages(library(randomForest)))
+```
+
+Removing NA data and Further Dataset Manipulation
+
+```{r overview, include = FALSE}
+##Overview of columns with NA data
+og_training %>% 
+  select(everything()) %>% 
+  summarise_all(funs(sum(is.na(.))))
+```
+
+```{r manipulation, include = TRUE, echo = FALSE}
+#Remove columns with less than 85% of information
+cl_training <- og_training[lapply(og_training, function(x) sum(is.na(x)) / length(x)) < 0.15 ]
+
+#More columns to exclude based on non numeric values
+f_trainingDF <- cl_training[,-c(1:6)]
+```
+
+Frequency Plot of Classe Variable
+
+```{r frq_plot, include = TRUE}
+#Taking a quick look at frequency for our classe variable
+barchart(f_trainingDF$classe, 
+         horizontal = FALSE,
+         main = "Frequency of Classe Variable")
+```
+
+Creating Machine Learning Datasets and Running Models
+
+```{r modeling, include = TRUE}
+
+#Create Data Partitions of the training group
+inTrain <- createDataPartition(y = f_trainingDF$classe, p = 0.7, list = FALSE)
+myTraining <- f_trainingDF[inTrain, ]; myTesting <- f_trainingDF[-inTrain, ]
+
+###
+#Spot holder for potential NZV variable removals
+###
+
+#Training a model with Decision Tree
+set.seed(123)
+decisionTreeModel <- rpart(classe ~ ., data = myTraining, method = "class")
+
+#Predict using Training Data
+DTprediction1 <- predict(decisionTreeModel, myTraining, type = "class")
+
+#Plot Tree to visualize isn't helpful, overplotted and too many variables
+##rpart.plot(decisionTreeModel, main = "Variable Classification")
+
+#Test accuracy
+confusionMatrix(DTprediction1, myTraining$classe)
+#.77% on training data
+
+#Train a model with Random Forest
+randomForestModel <- randomForest(classe ~., data = myTraining)
+
+#Predict using Training Data
+RFprediction2 <- predict(randomForestModel, myTraining, type = "class")
+
+#Test accuracy
+confusionMatrix(RFprediction2, myTraining$classe)
+#Accuracy 99%
+#Random Forest is much more accurate, now use on testing data
+
+#Train a model with Random Forest
+randomForestModel <- randomForest(classe ~., data = myTraining)
+
+#Predict using Testing Data
+RFprediction2 <- predict(randomForestModel, myTesting, type = "class")
+
+#Test accuracy
+confusionMatrix(RFprediction2, myTesting$classe)
+#Accuracy 99%
+
+```
+
+Since the accuracy of the Random Forest prediction was the best, we will test this predictor on our out of sample data.
+
+```{r predictions, include = TRUE}
+
+#Find predictions on out of sample data
+assignmentPredictions <- predict(randomForestModel, og_testing, type = "class")
+assignmentPredictions
+
+```
+
+
+
+
